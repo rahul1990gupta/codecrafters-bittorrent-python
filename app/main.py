@@ -39,7 +39,7 @@ def main():
         # Uncomment this block to pass the first stage
         if chr(bencoded_value[0]) == 'i':
 
-            print(int(bencoded_value[1:-2]))
+            print(int(bencoded_value[1:-1]))
         else:
             print(json.dumps(decode_bencode(bencoded_value), default=bytes_to_str))
     else:
