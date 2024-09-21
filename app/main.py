@@ -35,6 +35,8 @@ def decode_bencode(bencoded_value):
                 return [first_element] + decode_bencode(b'l' + bencoded_value[first_colon_index + str_len + 1:])
             else: 
                 return [first_element]
+        elif chr(bencoded_value[1]) == 'e':
+            return []
         else: 
             raise NotImplementedError("no nested support")
     else:
