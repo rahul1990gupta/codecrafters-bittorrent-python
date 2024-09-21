@@ -50,8 +50,8 @@ def main():
     command = sys.argv[1]
 
     # You can use print statements as follows for debugging, they'll be visible when running tests.
-    if command in ["info", "peers", "handshake"]:
-        process_fc(command, sys.argv[2])
+    if command in ["info", "peers", "handshake", "download_piece"]:
+        TorrentClient().process_request()
         return
 
     if command == "decode":
@@ -74,55 +74,57 @@ def main():
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
+import hashlib 
 
-def process_fc(command, metafile):
-    file_dict = {}
-    info_dict = {}
-    with open(metafile, 'rb') as f: 
-        file_dict = B().decode(f.read())
-        info_dict = file_dict[b"info"]
-    be_dict = e(info_dict)
-    import hashlib
- 
-    info_hash = hashlib.sha1(be_dict)
-    tracker_url = file_dict[b"announce"].decode().strip()
-    
-    if command == "info":
-        print("Tracker URL:", tracker_url)
-        print("Length:", info_dict[b"length"])
+class TorrentClient():
+    def __init__(self):
+        self.command = sys.argv[1]
+        if self.command == "download_piece":
+            self.tfile = sys.argv[4]
+            self.ofile = sys.argv[3]
+            self.piece_ix = int(sys.argv[5])
+        else:
+            self.tfile = sys.argv[2]
         
-        print("Info Hash:", info_hash.hexdigest())
-        print("Piece Length:", info_dict[b"piece length"])
+        with open(self.tfile, 'rb') as f: 
+            self.file_dict = B().decode(f.read())
+            self.info_dict = self.file_dict[b"info"]
+        
+        be_dict = e(self.info_dict)
+        self.info_hash = hashlib.sha1(be_dict)
+        self.tracker_url = self.file_dict[b"announce"].decode().strip()
+        self.piece_length = self.info_dict[b"piece length"]
+        
+    def info(self):
+        print("Tracker URL:", self.tracker_url)
+        print("Length:", self.info_dict[b"length"])
+        
+        print("Info Hash:", self.info_hash.hexdigest())
+        print("Piece Length:", self.piece_length)
         print("Piece Hashes:")
         i = 0 
-        cp = info_dict[b"pieces"]
+        cp = self.info_dict[b"pieces"]
         
         while i < len(cp):
             ph = cp[i:i + 20]
             print(ph.hex())
             i+=20
 
-            """
-            To calculate the info hash, you'll need to:
-
-                Extract the info dictionary from the torrent file after parsing
-                Bencode the contents of the info dictionary
-                Calculate the SHA-1 hash of this bencoded dictionary
-            """
-    elif command == "peers":
+    def peers(self):
         payload = {
-                "info_hash": info_hash.digest(),
+                "info_hash": self.info_hash.digest(),
                 "peer_id": "00112233445566778899",
                 "port": 6881,
                 "uploaded": 0,
                 "downloaded": 0,
-                "left": info_dict[b"length"],
+                "left": self.info_dict[b"length"],
                 "compact": 1
         }
-        response = requests.get(tracker_url, params=payload)
+        response = requests.get(self.tracker_url, params=payload)
         response_bd = B().decode(response.content)
         peers = response_bd[b"peers"]
         i = 0
+        plist = []
         while i < len(peers):
             peer = peers[i:i+6]
             p1 = peer[0]
@@ -132,27 +134,122 @@ def process_fc(command, metafile):
 
             port = int.from_bytes(peer[4:], 'big')
             print(f"{p1}.{p2}.{p3}.{p4}:{port}")
+            plist.append(f"{p1}.{p2}.{p3}.{p4}:{port}")
             i += 6
-    elif command == "handshake":
-        # generate handshake message
-        """
-        length of the protocol string (BitTorrent protocol) which is 19 (1 byte)
-        the string BitTorrent protocol (19 bytes)
-        eight reserved bytes, which are all set to zero (8 bytes)
-        sha1 infohash (20 bytes) (NOT the hexadecimal representation, which is 40 bytes long)
-        peer id (20 bytes) (you can use 00112233445566778899 for this challenge)
-        """
-        message =  b"BitTorrent protocol" + bytes(8) + info_hash.digest() + \
+        return plist
+    
+    def _handshake(self, s):
+        message =  b"BitTorrent protocol" + bytes(8) + self.info_hash.digest() + \
                 b"00112233445566778899"
+        hs_message = int(19).to_bytes(1, 'big') + message
+        s.send(hs_message)
 
-        handshake = int(19).to_bytes(1, 'big') + message
+    def handshake(self):
+         # generate handshake message
         ip, port = sys.argv[3].split(':')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((ip, int(port)))
-            s.send(handshake)
-            print(f"Peer ID: {s.recv(68)[48:].hex()}")
-    else:
-        raise NotImplementedError(f"Unknown command {command}")
+            self._handshake(s)
+            msg_rcvd = s.recv(68)
+            print(f"Peer ID: {msg_rcvd[48:].hex()}")
+
+
+    def download_piece(self):
+        peers = self.peers()
+        ip, port = peers[0].split(":") 
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((ip, int(port)))
+            self._handshake(s)
+            print("handshake sent")
+            
+            # receing handshake
+            s.recv(68)
+            print("handshake recved")
+
+            # pasrsing bitfied message 
+            mlen = int.from_bytes(s.recv(4), "big")
+            bf_buffer = s.recv(mlen)
+            msg_type = bf_buffer[0] # 5 for bitfield
+            print("bf rcved")
+            bitfield = bf_buffer[1:]
+            print("bitfield", bitfield)
+
+            # Send interested message key - 2 
+            msg = b"\x02"
+            s.send(len(msg).to_bytes(4, "big") + msg)
+            print("interested sent")
+            
+            # recv unchoke key - 1
+            uc_buffer = s.recv(5)
+            print("receiving unchoke key", uc_buffer[4], 1) # 1
+            
+            chunk_size = 16 * 1024
+            begin = 0
+            print("piece_length", self.piece_length)
+            blocks = []
+
+            while begin < self.piece_length:
+                # message key + index + begin + length 
+                msg = b"\x06" + \
+                        int(self.piece_ix).to_bytes(4, "big") + \
+                        begin.to_bytes(4, "big") + \
+                        min(chunk_size, self.piece_length - begin).to_bytes(4, "big")  
+                s.send(len(msg).to_bytes(4, "big") + msg)
+                
+                
+                # Read the message from peer
+                buff = self.recv_msg(s) 
+                key = buff[:1]
+                print(key, 7)
+                assert int.from_bytes(key) == 7
+                index = buff[1:5]
+                # slot = int.from_bytes(buff[5:9], "big") // chunk_size
+                blocks.append(buff[9:])
+                
+                begin += chunk_size
+            
+            data = b"".join(blocks)
+            data_hash = hashlib.sha1(data)
+            expected_hash = self.get_piece_hash(self.piece_ix)
+            print(expected_hash, data_hash.digest())
+            assert data_hash.digest() == expected_hash
+            
+            with open(self.ofile, 'wb') as f:
+                f.write(data)
+    
+    def recv_msg(self, s):
+        mlen = 0
+        while mlen == 0:
+            mlen = int.from_bytes(s.recv(4), "big")
+            # import time; time.sleep(0.5)
+        
+        print("--------", mlen)
+        got = 0
+        ret = b""
+        while got < mlen:
+            buff = s.recv(mlen-got)
+            ret +=buff
+            got += len(buff)
+        return ret
+
+    def get_piece_hash(self, ix):
+        start = ix * 20 
+        end = start + 20
+        piece_hash = self.info_dict[b"pieces"][start:end]
+        return piece_hash
+
+    
+    def process_request(self):
+        if self.command == "info":
+            self.info()
+        elif self.command == "peers":
+            self.peers()
+        elif self.command == "handshake":
+            self.handshake()
+        elif self.command == "download_piece":
+            self.download_piece()
+        else:
+            raise NotImplementedError(f"Unknown command {self.command}")
 
 
 
