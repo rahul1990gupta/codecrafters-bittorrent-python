@@ -69,15 +69,25 @@ def main():
     elif command == "info":
         metafile = sys.argv[2]
         with open(metafile, 'rb') as f: 
-            info_dict = B().decode(f.read())
-                
+            file_dict = B().decode(f.read())
+            info_dict = file_dict[b"info"]
             # import pdb;pdb.set_trace()
-            print("Tracker URL:", info_dict[b"announce"].decode().strip())
-            print("Length:", info_dict[b"info"][b"length"])
+            print("Tracker URL:", file_dict[b"announce"].decode().strip())
+            print("Length:", info_dict[b"length"])
             
-            be_dict = e(info_dict[b"info"])
+            be_dict = e(info_dict)
             import hashlib
             print("Info Hash:", hashlib.sha1(be_dict).hexdigest())
+            print("Piece Length:", info_dict[b"piece length"])
+            print("Piece Hashes:")
+            i = 0 
+            cp = info_dict[b"pieces"]
+            
+            while i < len(cp):
+                ph = cp[i:i + 20]
+                print(ph.hex())
+                i+=20
+    
             """
             To calculate the info hash, you'll need to:
 
