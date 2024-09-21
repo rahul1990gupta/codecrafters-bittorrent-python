@@ -56,20 +56,22 @@ def main():
         #
         # Let's convert them to strings for printing to the console.
         def bytes_to_str(data):
+            import pdb;pdb.set_trace()
             if isinstance(data, bytes):
                 return data.decode()
 
             raise TypeError(f"Type not serializable: {type(data)}")
 
         # Uncomment this block to pass the first stage
-        val = B().decode(bencoded_value)
+        val = B(return_str=True).decode(bencoded_value)
         print(json.dumps(val, default=bytes_to_str))
     elif command == "info":
         metafile = sys.argv[2]
         with open(metafile, 'rb') as f: 
             info_dict = B().decode(f.read())
-            print("Tracker URL: ", info_dict[b"announce"].decode().strip())
-            # print("Length ", info_dict[b"info"][b"length"])
+            # import pdb;pdb.set_trace()
+            print("Tracker URL:", info_dict[b"announce"].decode().strip())
+            print("Length:", info_dict[b"info"][b"length"])
     else:
         raise NotImplementedError(f"Unknown command {command}")
 

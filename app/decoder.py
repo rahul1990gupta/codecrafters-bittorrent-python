@@ -28,7 +28,7 @@ ENCODING_FALLBACK_TYPES = ('key', 'value')
 
 
 class BencodeDecoder(object):
-    def __init__(self, encoding=None, encoding_fallback=None, dict_ordered=False, dict_ordered_sort=False):
+    def __init__(self, encoding=None, encoding_fallback=None, dict_ordered=False, dict_ordered_sort=False, return_str=False):
         self.encoding = encoding
         self.dict_ordered = dict_ordered
         self.dict_ordered_sort = dict_ordered_sort
@@ -51,6 +51,7 @@ class BencodeDecoder(object):
         else:
             self.encoding_fallback = tuple()
 
+        self.return_str = return_str
         # noinspection PyDictCreation
         self.decode_func = {}
         self.decode_func[b'l'] = self.decode_list
@@ -120,7 +121,8 @@ class BencodeDecoder(object):
             except UnicodeDecodeError:
                 if kind not in self.encoding_fallback:
                     raise
-
+        if self.return_str:
+            return bytes(s).decode(), colon + n
         return bytes(s), colon + n
 
     def decode_list(self, x, f):
