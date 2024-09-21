@@ -2,6 +2,7 @@ import json
 import sys
 from app.decoder import BencodeDecoder as B
 from app.encode import encode as e
+import socket
 import requests
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
@@ -49,7 +50,7 @@ def main():
     command = sys.argv[1]
 
     # You can use print statements as follows for debugging, they'll be visible when running tests.
-    if command in ["info", "peers"]:
+    if command in ["info", "peers", "handshake"]:
         process_fc(command, sys.argv[2])
         return
 
@@ -132,6 +133,24 @@ def process_fc(command, metafile):
             port = int.from_bytes(peer[4:], 'big')
             print(f"{p1}.{p2}.{p3}.{p4}:{port}")
             i += 6
+    elif command == "handshake":
+        # generate handshake message
+        """
+        length of the protocol string (BitTorrent protocol) which is 19 (1 byte)
+        the string BitTorrent protocol (19 bytes)
+        eight reserved bytes, which are all set to zero (8 bytes)
+        sha1 infohash (20 bytes) (NOT the hexadecimal representation, which is 40 bytes long)
+        peer id (20 bytes) (you can use 00112233445566778899 for this challenge)
+        """
+        message =  b"BitTorrent protocol" + bytes(8) + info_hash.digest() + \
+                b"00112233445566778899"
+
+        handshake = int(19).to_bytes(1, 'big') + message
+        ip, port = sys.argv[3].split(':')
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((ip, int(port)))
+            s.send(handshake)
+            print(f"Peer ID: {s.recv(68)[48:].hex()}")
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
