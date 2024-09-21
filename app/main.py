@@ -1,6 +1,7 @@
 import json
 import sys
 from app.decoder import BencodeDecoder as B
+from app.encode import encode as e
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
@@ -69,9 +70,21 @@ def main():
         metafile = sys.argv[2]
         with open(metafile, 'rb') as f: 
             info_dict = B().decode(f.read())
+                
             # import pdb;pdb.set_trace()
             print("Tracker URL:", info_dict[b"announce"].decode().strip())
             print("Length:", info_dict[b"info"][b"length"])
+            
+            be_dict = e(info_dict[b"info"])
+            import hashlib
+            print("Info Hash:", hashlib.sha1(be_dict).hexdigest())
+            """
+            To calculate the info hash, you'll need to:
+
+                Extract the info dictionary from the torrent file after parsing
+                Bencode the contents of the info dictionary
+                Calculate the SHA-1 hash of this bencoded dictionary
+            """
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
