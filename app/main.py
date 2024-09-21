@@ -9,11 +9,34 @@ import sys
 # - decode_bencode(b"5:hello") -> b"hello"
 # - decode_bencode(b"10:hello12345") -> b"hello12345"
 def decode_bencode(bencoded_value):
-    if chr(bencoded_value[0]).isdigit():
+    print('\033[92m', "decoding......", bencoded_value, '\033[0m')
+    if chr(bencoded_value[0]).isdigit(): # string
         first_colon_index = bencoded_value.find(b":")
+        str_len = int(bencoded_value[:first_colon_index])
         if first_colon_index == -1:
             raise ValueError("Invalid encoded value")
         return bencoded_value[first_colon_index+1:]
+    elif chr(bencoded_value[0]) =='i': # Number
+        return int(bencoded_value[1:-1]) 
+    elif chr(bencoded_value[0]) == 'l': # list
+        first_element = ""
+        if chr(bencoded_value[1]) =='i':
+            first_e_index = bencoded_value.find(b"e")
+            first_element = int(bencoded_value[2:first_e_index])
+            if first_e_index < len(bencoded_value) - 2:
+                return [first_element] + decode_bencode(b'l' + bencoded_value[first_e_index+1:])
+            else: 
+                return [first_element]
+        elif chr(bencoded_value[1]).isdigit():
+            first_colon_index = bencoded_value.find(b":")
+            str_len = int(bencoded_value[1:first_colon_index])
+            first_element = bencoded_value[first_colon_index+1: first_colon_index + 1 + str_len] 
+            if str_len < len(bencoded_value) -3:
+                return [first_element] + decode_bencode(b'l' + bencoded_value[first_colon_index + str_len + 1:])
+            else: 
+                return [first_element]
+        else: 
+            raise NotImplementedError("no nested support")
     else:
         raise NotImplementedError("Only strings are supported at the moment")
 
@@ -37,11 +60,8 @@ def main():
             raise TypeError(f"Type not serializable: {type(data)}")
 
         # Uncomment this block to pass the first stage
-        if chr(bencoded_value[0]) == 'i':
 
-            print(int(bencoded_value[1:-1]))
-        else:
-            print(json.dumps(decode_bencode(bencoded_value), default=bytes_to_str))
+        print(json.dumps(decode_bencode(bencoded_value), default=bytes_to_str))
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
