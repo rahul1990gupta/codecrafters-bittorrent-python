@@ -1,6 +1,6 @@
 import json
 import sys
-import bencodepy
+from decoder import BencodeDecoder as B
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
@@ -62,8 +62,8 @@ def main():
             raise TypeError(f"Type not serializable: {type(data)}")
 
         # Uncomment this block to pass the first stage
-
-        print(json.dumps(bencodepy.decode(bencoded_value), default=bytes_to_str))
+        val = B().decode(bencoded_value)
+        print(json.dumps(val, default=bytes_to_str))
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
