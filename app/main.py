@@ -1,6 +1,6 @@
 import json
 import sys
-from decoder import BencodeDecoder as B
+from app.decoder import BencodeDecoder as B
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
