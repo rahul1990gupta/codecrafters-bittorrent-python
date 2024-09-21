@@ -9,7 +9,7 @@ import sys
 # - decode_bencode(b"5:hello") -> b"hello"
 # - decode_bencode(b"10:hello12345") -> b"hello12345"
 def decode_bencode(bencoded_value):
-    print('\033[92m', "decoding......", bencoded_value, '\033[0m')
+    # print('\033[92m', "decoding......", bencoded_value, '\033[0m')
     if chr(bencoded_value[0]).isdigit(): # string
         first_colon_index = bencoded_value.find(b":")
         str_len = int(bencoded_value[:first_colon_index])
