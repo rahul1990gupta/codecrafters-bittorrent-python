@@ -121,7 +121,7 @@ class BencodeDecoder(object):
                 if kind not in self.encoding_fallback:
                     raise
 
-        return bytes(s).decode(), colon + n
+        return bytes(s), colon + n
 
     def decode_list(self, x, f):
         # type: (bytes, int) -> Tuple[List, int]
