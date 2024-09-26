@@ -1,9 +1,17 @@
 import json
 import sys
-from app.decoder import BencodeDecoder as B
-from app.encode import encode as e
+
 import socket
 import requests
+import hashlib
+
+from decoder import BencodeDecoder as B
+from encode import encode as e
+from app.peer_message import( 
+    Msg,
+    PeerMessage,
+    CHUNK_SIZE
+)
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
@@ -50,10 +58,6 @@ def main():
     command = sys.argv[1]
 
     # You can use print statements as follows for debugging, they'll be visible when running tests.
-    if command in ["info", "peers", "handshake", "download_piece"]:
-        TorrentClient().process_request()
-        return
-
     if command == "decode":
         bencoded_value = sys.argv[2].encode()
 
@@ -62,7 +66,6 @@ def main():
         #
         # Let's convert them to strings for printing to the console.
         def bytes_to_str(data):
-            import pdb;pdb.set_trace()
             if isinstance(data, bytes):
                 return data.decode()
 
@@ -71,10 +74,10 @@ def main():
         # Uncomment this block to pass the first stage
         val = B(return_str=True).decode(bencoded_value)
         print(json.dumps(val, default=bytes_to_str))
+    elif command in ["info", "peers", "handshake", "download_piece"]:
+        TorrentClient().process_request()
     else:
         raise NotImplementedError(f"Unknown command {command}")
-
-import hashlib 
 
 class TorrentClient():
     def __init__(self):
@@ -156,57 +159,35 @@ class TorrentClient():
 
     def download_piece(self):
         peers = self.peers()
-        ip, port = peers[0].split(":") 
+        ip, port = peers[2].split(":") 
+        pm = PeerMessage()
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((ip, int(port)))
             self._handshake(s)
             print("handshake sent")
             
             # receing handshake
-            s.recv(68)
+            s.recv(68) # why 68 ??
             print("handshake recved")
 
             # pasrsing bitfied message 
-            mlen = int.from_bytes(s.recv(4), "big")
-            bf_buffer = s.recv(mlen)
-            msg_type = bf_buffer[0] # 5 for bitfield
-            print("bf rcved")
-            bitfield = bf_buffer[1:]
-            print("bitfield", bitfield)
+            bitfield = pm.recv(s, Msg.bitfield)
+            pm.send(s, Msg.interested)
+            pm.recv(s, Msg.unchoke)
 
-            # Send interested message key - 2 
-            msg = b"\x02"
-            s.send(len(msg).to_bytes(4, "big") + msg)
-            print("interested sent")
-            
-            # recv unchoke key - 1
-            uc_buffer = s.recv(5)
-            print("receiving unchoke key", uc_buffer[4], 1) # 1
-            
-            chunk_size = 16 * 1024
             begin = 0
             print("piece_length", self.piece_length)
             blocks = []
 
             while begin < self.piece_length:
-                # message key + index + begin + length 
-                msg = b"\x06" + \
-                        int(self.piece_ix).to_bytes(4, "big") + \
-                        begin.to_bytes(4, "big") + \
-                        min(chunk_size, self.piece_length - begin).to_bytes(4, "big")  
-                s.send(len(msg).to_bytes(4, "big") + msg)
+                curr_size = min(CHUNK_SIZE, self.piece_length - begin)
+                pm.send_request(s, self.piece_ix, begin, curr_size)                
                 
-                
-                # Read the message from peer
-                buff = self.recv_msg(s) 
-                key = buff[:1]
-                print(key, 7)
-                assert int.from_bytes(key) == 7
-                index = buff[1:5]
-                # slot = int.from_bytes(buff[5:9], "big") // chunk_size
-                blocks.append(buff[9:])
-                
-                begin += chunk_size
+                block = pm.recv_piece(s)
+                blocks.append(block)
+
+                begin += CHUNK_SIZE
             
             data = b"".join(blocks)
             data_hash = hashlib.sha1(data)
@@ -216,21 +197,6 @@ class TorrentClient():
             
             with open(self.ofile, 'wb') as f:
                 f.write(data)
-    
-    def recv_msg(self, s):
-        mlen = 0
-        while mlen == 0:
-            mlen = int.from_bytes(s.recv(4), "big")
-            # import time; time.sleep(0.5)
-        
-        print("--------", mlen)
-        got = 0
-        ret = b""
-        while got < mlen:
-            buff = s.recv(mlen-got)
-            ret +=buff
-            got += len(buff)
-        return ret
 
     def get_piece_hash(self, ix):
         start = ix * 20 
