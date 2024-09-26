@@ -12,6 +12,7 @@ from app.peer_message import(
     PeerMessage,
     CHUNK_SIZE
 )
+
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
@@ -159,7 +160,7 @@ class TorrentClient():
 
     def download_piece(self):
         peers = self.peers()
-        ip, port = peers[2].split(":") 
+        ip, port = peers[1].split(":") 
         pm = PeerMessage()
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

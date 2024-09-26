@@ -1,5 +1,6 @@
 
 from enum import Enum 
+import struct
 
 class Msg(Enum):
     choke = 0
@@ -27,21 +28,24 @@ class PeerMessage:
         func_dict[msg_type.value](s)
 
     def send_interested(self, s):
-        msg = b"\x02"
-        s.send(len(msg).to_bytes(4, "big") + msg)
+        payload = struct.pack(
+            ">IB",
+            1,
+            Msg.interested.value
+        )
+        s.send(payload)
     
     def send_request(self, s, piece_index, begin, curr_size):
-        values = [
-            Msg.request.value,
-            int(piece_index),
-            begin,
-            curr_size 
-        ]
-        msg = b"".join([ v.to_bytes(4, "big")
-            for v in values])
-        full_mgs = len(msg).to_bytes(4, "big") + msg
-        
-        s.send(full_mgs)
+        request_payload = struct.pack(
+                ">IBIII", 
+                13, 
+                Msg.request.value, 
+                int(piece_index), 
+                begin, 
+                curr_size
+            )
+
+        s.send(request_payload)
 
     def recv(self, s, msg_type):
         func_dict = {
@@ -64,6 +68,7 @@ class PeerMessage:
     def recv_unchoke(self, s):
         unchoke_buffer = s.recv(5)
         assert unchoke_buffer[4] == Msg.unchoke.value 
+        print(Msg.unchoke)
     
     def recv_piece(self, s):
         buff = self.recv_msg(s) 
