@@ -5,8 +5,8 @@ import socket
 import requests
 import hashlib
 
-from decoder import BencodeDecoder as B
-from encode import encode as e
+from app.decoder import BencodeDecoder as B
+from app.encode import encode as e
 from app.peer_message import( 
     Msg,
     PeerMessage,
