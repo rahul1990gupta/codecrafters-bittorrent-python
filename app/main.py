@@ -179,21 +179,28 @@ class TorrentClient():
         zip(offsets, sizes)
 
     def setup_socket(self, peer):
-        ip, port = peer.split(":")
-        pm = PeerMessage()
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((ip, int(port)))
-        self._handshake(s)
-        print("handshake sent")
-        
-        # receing handshake
-        s.recv(68) # why 68 ??
-        print("handshake recved")
-        bitfield = pm.recv(s, Msg.bitfield)
+        no_socket = True
+        while no_socket:
+            try:
+                import time; time.sleep(0.5)
+                ip, port = peer.split(":")
+                pm = PeerMessage()
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((ip, int(port)))
+                self._handshake(s)
+                print("handshake sent")
+                
+                # receing handshake
+                s.recv(68) # why 68 ??
+                print("handshake recved")
+                bitfield = pm.recv(s, Msg.bitfield)
 
-        pm.send(s, Msg.interested)
-        pm.recv(s, Msg.unchoke)
-
+                pm.send(s, Msg.interested)
+                pm.recv(s, Msg.unchoke)
+                no_socket = False
+            except Exception as e:
+                print(e)
+                continue
         return s
 
     def worker(self, peer):
@@ -201,11 +208,7 @@ class TorrentClient():
         while True:
             piece_ix = self.q.get()
             print(f'Working on {piece_ix}')
-            try:
-                data = self.download_piece(s, piece_ix)
-            except Exception as e:
-                s = self.setup_socket(peer)
-                continue
+            data = self.download_piece(s, piece_ix)
             self.full_file[piece_ix] = data
             print(f"Finished {piece_ix}") 
             self.q.task_done()     
@@ -216,16 +219,17 @@ class TorrentClient():
         import queue
         self.q = queue.Queue()
 
-        for i in range(3):
+        for i in range(9):
             import time; time.sleep(0.1)
-            threading.Thread(target=self.worker, args=(peers[i % 3], ), daemon=True).start()
+            threading.Thread(target=self.worker, args=(peers[i%3], ), daemon=True).start()
     
         print("total pieces", len(self.pieces))
         for i, _ in enumerate(self.pieces):
             self.q.put(i)
         
         self.q.join()
-
+        # for s in socketpool:
+        #     s.close()
         with open(self.ofile, 'wb') as f:
             f.write(b"".join(self.full_file))
 
