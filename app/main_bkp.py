@@ -141,7 +141,7 @@ class TorrentClient():
         }
         response = requests.get(self.tracker_url, params=payload)
         response_bd = B().decode(response.content)
-
+        print(response_bd)
         peers = response_bd[b"peers"]
         i = 0
         plist = []
@@ -196,37 +196,16 @@ class TorrentClient():
 
         return s
 
-    def worker(self, peer):
-        s = self.setup_socket(peer)
-        while True:
-            piece_ix = self.q.get()
-            print(f'Working on {piece_ix}')
-            try:
-                data = self.download_piece(s, piece_ix)
-            except Exception as e:
-                s = self.setup_socket(peer)
-                continue
-            self.full_file[piece_ix] = data
-            print(f"Finished {piece_ix}") 
-            self.q.task_done()     
-            
+    def download(self, s):
+        full_file = []
 
-    def download(self, peers):
-        self.full_file = [None] * len(self.pieces)
-        import queue
-        self.q = queue.Queue()
-
-        for peer in peers:
-            threading.Thread(target=self.worker, args=(peer, ), daemon=True).start()
-    
         print("total pieces", len(self.pieces))
-        for i, _ in enumerate(self.pieces):
-            self.q.put(i)
+        for i, piece in enumerate(self.pieces):
+            item = self.download_piece(s, i)
+            full_file.append(item)
         
-        self.q.join()
-
         with open(self.ofile, 'wb') as f:
-            f.write(b"".join(self.full_file))
+            f.write(b"".join(full_file))
 
 
     def download_piece(self, s,  piece_ix):
@@ -272,7 +251,7 @@ class TorrentClient():
 
     
     def process_request(self):
-
+        peers = self.peers()  
         if self.command == "info":
             self.info()
         elif self.command == "peers":
@@ -282,7 +261,6 @@ class TorrentClient():
         elif self.command == "handshake":
             self.handshake()
         elif self.command == "download_piece":
-            peers = self.peers()  
             s = self.setup_socket(peers[1])
             piece_ix = int(sys.argv[5])
         
@@ -291,8 +269,9 @@ class TorrentClient():
                 f.write(data)
             s.close()
         elif self.command == "download":
-            peers = self.peers()  
-            self.download(peers)
+            s = self.setup_socket(peers[1])
+            self.download(s)
+            s.close()
         else:
             raise NotImplementedError(f"Unknown command {self.command}")
 
