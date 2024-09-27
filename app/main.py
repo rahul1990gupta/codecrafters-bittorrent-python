@@ -79,7 +79,7 @@ def main():
         # Uncomment this block to pass the first stage
         val = B(return_str=True).decode(bencoded_value)
         print(json.dumps(val, default=bytes_to_str))
-    elif command in ["info", "peers", "handshake", "download_piece"]:
+    elif command in ["info", "peers", "handshake", "download_piece", "download"]:
         TorrentClient().process_request()
     else:
         raise NotImplementedError(f"Unknown command {command}")
@@ -90,7 +90,9 @@ class TorrentClient():
         if self.command == "download_piece":
             self.tfile = sys.argv[4]
             self.ofile = sys.argv[3]
-            self.piece_ix = int(sys.argv[5])
+        elif self.command == "download":
+            self.tfile = sys.argv[4]
+            self.ofile = sys.argv[3]
         else:
             self.tfile = sys.argv[2]
         
@@ -103,7 +105,15 @@ class TorrentClient():
         self.tracker_url = self.file_dict[b"announce"].decode().strip()
         self.max_piece_length = self.info_dict[b"piece length"]
         self.file_length = self.info_dict[b"length"]
-        
+
+        cp = self.info_dict[b"pieces"]
+        self.pieces = []
+        i = 0
+        while i < len(cp):
+            ph = cp[i:i + 20]
+            self.pieces.append(ph.hex())
+            i+=20
+
     def info(self):
         print("Tracker URL:", self.tracker_url)
         print("Length:", self.info_dict[b"length"])
@@ -142,7 +152,6 @@ class TorrentClient():
             p4 = peer[3]
 
             port = int.from_bytes(peer[4:], 'big')
-            print(f"{p1}.{p2}.{p3}.{p4}:{port}")
             plist.append(f"{p1}.{p2}.{p3}.{p4}:{port}")
             i += 6
         return plist
@@ -168,56 +177,70 @@ class TorrentClient():
 
         zip(offsets, sizes)
 
+    def setup_socket(self, peer):
+        ip, port = peer.split(":")
+        pm = PeerMessage()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((ip, int(port)))
+        self._handshake(s)
+        print("handshake sent")
+        
+        # receing handshake
+        s.recv(68) # why 68 ??
+        print("handshake recved")
+        bitfield = pm.recv(s, Msg.bitfield)
 
-    def download_piece(self):
-        peers = self.peers()
-        ip, port = peers[0].split(":") 
+        pm.send(s, Msg.interested)
+        pm.recv(s, Msg.unchoke)
+
+        return s
+
+    def download(self, s):
+        full_file = []
+
+        print("total pieces", len(self.pieces))
+        for i, piece in enumerate(self.pieces):
+            item = self.download_piece(s, i)
+            full_file.append(item)
+        
+        with open(self.ofile, 'wb') as f:
+            f.write(b"".join(full_file))
+
+
+    def download_piece(self, s,  piece_ix):
+
         pm = PeerMessage()
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((ip, int(port)))
-            self._handshake(s)
-            print("handshake sent")
-            
-            # receing handshake
-            s.recv(68) # why 68 ??
-            print("handshake recved")
+        piece_length = min(
+            self.max_piece_length, 
+            self.file_length - piece_ix * self.max_piece_length
+        )
+        print("piece_index", piece_ix)
+        print("piece_length", piece_length)
+        blocks = []
 
-            # pasrsing bitfied message 
-            bitfield = pm.recv(s, Msg.bitfield)
-            pm.send(s, Msg.interested)
-            pm.recv(s, Msg.unchoke)
+        offsets = list(range(0, piece_length, CHUNK_SIZE))
+        sizes = [CHUNK_SIZE] * (len(offsets)-1) + [piece_length - offsets[-1]]
+        blocks = [None for _ in range(len(offsets))]
+        print(list(zip(offsets, sizes)))
 
-            piece_length = min(
-                self.max_piece_length, 
-                self.file_length - self.piece_ix * self.max_piece_length
-            )
-            print("piece_length", piece_length)
-            blocks = []
+        it = list(zip(offsets, sizes))
+        for i in range(0, len(it)):
+            offset, size = it[i]
+            pm.send_request(s, piece_ix, offset, size)
+        # for _ in offsets:
+            slot, block = pm.recv_piece(s)
+            blocks[slot] = block
 
-            offsets = list(range(0, piece_length, CHUNK_SIZE))
-            sizes = [CHUNK_SIZE] * (len(offsets)-1) + [piece_length - offsets[-1]]
-            blocks = [None for _ in range(len(offsets))]
-            print(list(zip(offsets, sizes)))
+        data = b"".join(blocks)
+        data_hash = hashlib.sha1(data)
+        expected_hash = self.get_piece_hash(piece_ix)
 
-            it = list(zip(offsets, sizes))
-            for i in range(0, len(it)):
-                offset, size = it[i]
-                pm.send_request(s, self.piece_ix, offset, size)
-            # for _ in offsets:
-                slot, block = pm.recv_piece(s)
-                blocks[slot] = block
+        print(expected_hash, data_hash.digest())
+        assert data_hash.digest() == expected_hash
 
-            data = b"".join(blocks)
-            data_hash = hashlib.sha1(data)
-            expected_hash = self.get_piece_hash(self.piece_ix)
-
-            print(expected_hash, data_hash.digest())
-            assert data_hash.digest() == expected_hash
-            
-            with open(self.ofile, 'wb') as f:
-                f.write(data)
-            print("Download successfull!")
+        print("Download successfull!")
+        return data
 
     def get_piece_hash(self, ix):
         start = ix * 20 
@@ -227,17 +250,29 @@ class TorrentClient():
 
     
     def process_request(self):
+        peers = self.peers()  
         if self.command == "info":
             self.info()
         elif self.command == "peers":
-            self.peers()
+            plist = self.peers()
+            for p in plist:
+                print(p)
         elif self.command == "handshake":
             self.handshake()
         elif self.command == "download_piece":
-            self.download_piece()
+            s = self.setup_socket(peers[1])
+            piece_ix = int(sys.argv[5])
+        
+            data = self.download_piece(s, piece_ix)
+            with open(self.ofile, 'wb') as f:
+                f.write(data)
+            s.close()
+        elif self.command == "download":
+            s = self.setup_socket(peers[1])
+            self.download(s)
+            s.close()
         else:
             raise NotImplementedError(f"Unknown command {self.command}")
-
 
 
 if __name__ == "__main__":
