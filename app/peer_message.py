@@ -44,7 +44,7 @@ class PeerMessage:
                 begin, 
                 curr_size
             )
-        # print("request sent for", begin)
+        print("request sent for", begin)
         s.send(request_payload)
 
     def recv(self, s, msg_type):
@@ -80,7 +80,7 @@ class PeerMessage:
         offset = int.from_bytes( buff[5:9], "big")
         slot = offset // CHUNK_SIZE
 
-        # print("received piece for", offset)
+        print("received piece for", offset)
         return slot, buff[9:]
 
     

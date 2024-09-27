@@ -101,14 +101,15 @@ class TorrentClient():
         be_dict = e(self.info_dict)
         self.info_hash = hashlib.sha1(be_dict)
         self.tracker_url = self.file_dict[b"announce"].decode().strip()
-        self.piece_length = self.info_dict[b"piece length"]
+        self.max_piece_length = self.info_dict[b"piece length"]
+        self.file_length = self.info_dict[b"length"]
         
     def info(self):
         print("Tracker URL:", self.tracker_url)
         print("Length:", self.info_dict[b"length"])
         
         print("Info Hash:", self.info_hash.hexdigest())
-        print("Piece Length:", self.piece_length)
+        print("Piece Length:", self.max_piece_length)
         print("Piece Hashes:")
         i = 0 
         cp = self.info_dict[b"pieces"]
@@ -187,19 +188,23 @@ class TorrentClient():
             pm.send(s, Msg.interested)
             pm.recv(s, Msg.unchoke)
 
-            print("piece_length", self.piece_length)
+            piece_length = min(
+                self.max_piece_length, 
+                self.file_length - self.piece_ix * self.max_piece_length
+            )
+            print("piece_length", piece_length)
             blocks = []
 
-
-            offsets = list(range(0, self.piece_length, CHUNK_SIZE))
-            sizes = [CHUNK_SIZE] * (len(offsets)-1) + [self.piece_length - offsets[-1]]
+            offsets = list(range(0, piece_length, CHUNK_SIZE))
+            sizes = [CHUNK_SIZE] * (len(offsets)-1) + [piece_length - offsets[-1]]
             blocks = [None for _ in range(len(offsets))]
             print(list(zip(offsets, sizes)))
 
-            for offset, size in zip(offsets, sizes):
+            it = list(zip(offsets, sizes))
+            for i in range(0, len(it)):
+                offset, size = it[i]
                 pm.send_request(s, self.piece_ix, offset, size)
-            
-            for _ in offsets:
+            # for _ in offsets:
                 slot, block = pm.recv_piece(s)
                 blocks[slot] = block
 
@@ -212,32 +217,7 @@ class TorrentClient():
             
             with open(self.ofile, 'wb') as f:
                 f.write(data)
-            print("Download successfull !")
-
-    def download_piece_threaded(self):
-
-        peers = self.peers()
-     
-        offsets = list(range(0, self.piece_length, CHUNK_SIZE))
-        sizes = [CHUNK_SIZE] * (len(offsets)-1) + [self.piece_length - offsets[-1]]
-        
-        self.work = queue.Queue()
-        for item in list(zip(offsets, sizes)):
-            self.work.put(item)
-        
-        self.blocks = [None for _ in range(len(offsets))]
-
-        def worker():
-            while True:
-                item = self.work.get()
-                print(f'Working on {item}')
-                if item > 15:
-                    result[item] = item
-
-                print(f'Finished {item}')
-                q.task_done()
-
-
+            print("Download successfull!")
 
     def get_piece_hash(self, ix):
         start = ix * 20 
