@@ -44,7 +44,7 @@ class PeerMessage:
                 begin, 
                 curr_size
             )
-
+        # print("request sent for", begin)
         s.send(request_payload)
 
     def recv(self, s, msg_type):
@@ -73,26 +73,29 @@ class PeerMessage:
     def recv_piece(self, s):
         buff = self.recv_msg(s) 
         key = buff[:1]
-    
+        # print("key", key)
         assert int.from_bytes(key) == Msg.piece.value
 
         index = buff[1:5]
-        offset = buff[5:9]
-        # slot = int.from_bytes(buff[5:9], "big") // chunk_size
-        return buff[9:]
+        offset = int.from_bytes( buff[5:9], "big")
+        slot = offset // CHUNK_SIZE
+
+        # print("received piece for", offset)
+        return slot, buff[9:]
 
     
     def recv_msg(self, s):
         mlen = 0
         while mlen == 0:
             mlen = int.from_bytes(s.recv(4), "big")
-            # import time; time.sleep(0.5)
-        
-        print("--------", mlen)
+            # import time; time.sleep(0.1)
+    
+        # print("--------", mlen)
         got = 0
         ret = b""
         while got < mlen:
             buff = s.recv(mlen-got)
             ret +=buff
             got += len(buff)
+
         return ret

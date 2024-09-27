@@ -12,6 +12,10 @@ from app.peer_message import(
     PeerMessage,
     CHUNK_SIZE
 )
+import threading
+import queue
+
+
 
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
@@ -157,10 +161,16 @@ class TorrentClient():
             msg_rcvd = s.recv(68)
             print(f"Peer ID: {msg_rcvd[48:].hex()}")
 
+    def scratch(self):
+        offsets = list(range(0, self.piece_length, CHUNK_SIZE))
+        sizes = range(0, len(offsets)-1) + [self.piece_length - offsets[-1]]
+
+        zip(offsets, sizes)
+
 
     def download_piece(self):
         peers = self.peers()
-        ip, port = peers[1].split(":") 
+        ip, port = peers[0].split(":") 
         pm = PeerMessage()
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -177,27 +187,57 @@ class TorrentClient():
             pm.send(s, Msg.interested)
             pm.recv(s, Msg.unchoke)
 
-            begin = 0
             print("piece_length", self.piece_length)
             blocks = []
 
-            while begin < self.piece_length:
-                curr_size = min(CHUNK_SIZE, self.piece_length - begin)
-                pm.send_request(s, self.piece_ix, begin, curr_size)                
-                
-                block = pm.recv_piece(s)
-                blocks.append(block)
 
-                begin += CHUNK_SIZE
+            offsets = list(range(0, self.piece_length, CHUNK_SIZE))
+            sizes = [CHUNK_SIZE] * (len(offsets)-1) + [self.piece_length - offsets[-1]]
+            blocks = [None for _ in range(len(offsets))]
+            print(list(zip(offsets, sizes)))
+
+            for offset, size in zip(offsets, sizes):
+                pm.send_request(s, self.piece_ix, offset, size)
             
+            for _ in offsets:
+                slot, block = pm.recv_piece(s)
+                blocks[slot] = block
+
             data = b"".join(blocks)
             data_hash = hashlib.sha1(data)
             expected_hash = self.get_piece_hash(self.piece_ix)
+
             print(expected_hash, data_hash.digest())
             assert data_hash.digest() == expected_hash
             
             with open(self.ofile, 'wb') as f:
                 f.write(data)
+            print("Download successfull !")
+
+    def download_piece_threaded(self):
+
+        peers = self.peers()
+     
+        offsets = list(range(0, self.piece_length, CHUNK_SIZE))
+        sizes = [CHUNK_SIZE] * (len(offsets)-1) + [self.piece_length - offsets[-1]]
+        
+        self.work = queue.Queue()
+        for item in list(zip(offsets, sizes)):
+            self.work.put(item)
+        
+        self.blocks = [None for _ in range(len(offsets))]
+
+        def worker():
+            while True:
+                item = self.work.get()
+                print(f'Working on {item}')
+                if item > 15:
+                    result[item] = item
+
+                print(f'Finished {item}')
+                q.task_done()
+
+
 
     def get_piece_hash(self, ix):
         start = ix * 20 
