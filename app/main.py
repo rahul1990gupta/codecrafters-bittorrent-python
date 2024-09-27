@@ -216,8 +216,8 @@ class TorrentClient():
         import queue
         self.q = queue.Queue()
 
-        for peer in peers:
-            threading.Thread(target=self.worker, args=(peer, ), daemon=True).start()
+        for i in range(6):
+            threading.Thread(target=self.worker, args=(peers[i % 3], ), daemon=True).start()
     
         print("total pieces", len(self.pieces))
         for i, _ in enumerate(self.pieces):
