@@ -287,8 +287,9 @@ class TorrentClient():
         elif self.command == "handshake":
             self.handshake()
         elif self.command == "download_piece":
-            peers = self.peers()  
-            s = self.setup_socket(peers[1])
+            peers = self.peers() 
+
+            s = self.setup_socket(peers[0])          
             piece_ix = int(sys.argv[5])
         
             data = self.download_piece(s, piece_ix)
