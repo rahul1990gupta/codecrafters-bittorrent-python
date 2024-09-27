@@ -250,7 +250,7 @@ class TorrentClient():
         for i in range(0, len(it)):
             offset, size = it[i]
             pm.send_request(s, piece_ix, offset, size)
-            # for _ in offsets:
+        # for _ in offsets:
             slot, block = pm.recv_piece(s)
             blocks[slot] = block
 
